@@ -1,9 +1,11 @@
 # 🌾 Maplewind Hollow — an AI-driven cosy town
 
+[![Live demo](https://img.shields.io/badge/▶_Play_it_live-maplewind--hollow.streamlit.app-FF4B4B?logo=streamlit&logoColor=white)](https://maplewind-hollow.streamlit.app)
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
-![Streamlit](https://img.shields.io/badge/Streamlit-app-FF4B4B?logo=streamlit&logoColor=white)
 ![DeepSeek](https://img.shields.io/badge/LLM-DeepSeek-4D6BFE)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green)
+
+**🎮 Play it now — no setup needed: [maplewind-hollow.streamlit.app](https://maplewind-hollow.streamlit.app)**
 
 A visual-novel-style prototype where **every villager is an LLM agent**. Chat
 with them, take on quests, haggle over rewards, and watch the story — and
@@ -60,6 +62,9 @@ the key to shipping LLM features in real games.
 *(Characters and artwork are original to avoid any IP issues.)*
 
 ## Try it
+
+Play online at **[maplewind-hollow.streamlit.app](https://maplewind-hollow.streamlit.app)**
+(any language — the villagers follow yours), or run it locally below.
 
 A typical loop:
 1. Ask **Marla** for work (just say so in chat, any language) → she offers a
