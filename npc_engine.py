@@ -108,7 +108,11 @@ def new_world():
         "history": {"marla": [], "odell": [], "wren": []},  # per-NPC chat memory
         "log": [],              # human-readable event log for the side panel
         "pending_choices": {"marla": [], "odell": [], "wren": []},  # quick replies
+        "mood": {"marla": "neutral", "odell": "neutral", "wren": "neutral"},
     }
+
+
+VALID_MOODS = ("neutral", "happy", "sad", "angry", "shy", "surprised")
 
 
 def _active_quest_for(npc_id, world):
@@ -130,12 +134,16 @@ def _offered_quest_for(npc_id, world):
 # --------------------------------------------------------------------------
 # Procedural content generation — generate a NEW quest from the world state
 # --------------------------------------------------------------------------
-def generate_quest(world):
+def generate_quest(world, lang_sample=None):
     client = get_client()
     rep = world["player"]["reputation"]
     done = [q["title"] for q in world["quests"] if q["status"] == "done"]
     targets = {k: v["name"] + " (" + v["role"] + ")"
                for k, v in NPCS.items() if not v["is_quest_giver"]}
+    lang_rule = (f'Write all player-facing text ("title", "description", "item", '
+                 f'"offer_choices") in the same language as this sample of the '
+                 f'player\'s speech: "{lang_sample}".'
+                 if lang_sample else "")
 
     prompt = f"""You are the quest designer for a cosy small-town game, Maplewind Hollow.
 Marla (the shopkeeper) hands out small SOCIAL errands that are solved by TALKING to a
@@ -144,14 +152,16 @@ villager — never by combat. Generate ONE new quest as strict JSON.
 Available target villagers (pick one): {json.dumps(targets, ensure_ascii=False)}
 Player reputation so far: {json.dumps(rep)}
 Quests already completed: {json.dumps(done, ensure_ascii=False)}
+{lang_rule}
 
 Return ONLY JSON with these keys:
 {{
   "title": "short evocative title",
   "target_npc": "marla|odell|wren  (must be one of the target ids above)",
   "description": "1-2 sentences Marla would say when giving the quest",
-  "success_condition": "a clear, checkable social outcome, e.g. 'the player gets Odell to agree to pay his tab'",
-  "reward": {{"gold": 30-80, "item": "a small flavourful item", "reputation": 10-20}}
+  "success_condition": "a clear, checkable social outcome, e.g. 'the player gets Odell to agree to pay his tab' (always in English)",
+  "reward": {{"gold": 30-80, "item": "a small flavourful item", "reputation": 10-20}},
+  "offer_choices": ["a short line accepting the errand", "a short line haggling over the pay", "a short line politely declining"]
 }}
 Make it fit a warm, gentle village. No violence."""
 
@@ -184,12 +194,15 @@ Make it fit a warm, gentle village. No violence."""
         quest["reward"]["gold"] = 40
     world["quests"].append(quest)
     world["log"].append(f"🗒️ Marla offers a quest: {quest['title']}")
+    offer_choices = [str(c) for c in data.get("offer_choices", []) if str(c).strip()]
     world.setdefault("pending_choices", {k: [] for k in NPCS})
-    world["pending_choices"]["marla"] = [
+    world["pending_choices"]["marla"] = offer_choices[:4] or [
         "I'll take it.",
         "What's the pay? Can you do better?",
         "Not this time, Marla.",
     ]
+    world.setdefault("mood", {k: "neutral" for k in NPCS})
+    world["mood"]["marla"] = "happy"
     return quest
 
 
@@ -210,9 +223,20 @@ def _system_prompt(npc_id, world):
     parts = [npc["persona"],
              "",
              "You are a character in a living town. Stay fully in character. "
-             "Keep replies to 1-4 short lines. Never break character or mention AI.",
+             "Keep replies to 1-4 short lines. Never break character or mention AI. "
+             "Reply in the same language the player speaks. Output dialogue and "
+             "*actions* only — never JSON, lists or meta commentary.",
              "",
              "SHARED WORLD STATE (you are aware of this): " + _world_summary(world)]
+
+    if npc["is_quest_giver"] and not _offered_quest_for(npc_id, world):
+        parts += [
+            "",
+            "If the player asks you for work, a job, an errand or a quest, reply "
+            "that you might have something for them — but do NOT invent concrete "
+            "errand details yourself; the game will generate the errand and show "
+            "it to the player right after your reply.",
+        ]
 
     oq = _offered_quest_for(npc_id, world)
     if oq:
@@ -221,11 +245,9 @@ def _system_prompt(npc_id, world):
             f"You have OFFERED the player this errand (they haven't decided yet): "
             f"\"{oq['description']}\" Current reward: {oq['reward'].get('gold', 0)} gold"
             + (f" and {oq['reward'].get('item')}" if oq['reward'].get('item') else "") + ".",
-            "If the player ACCEPTS it, add \"quest_decision\": \"accept\" to the @@STATE@@ JSON.",
-            "If the player clearly REFUSES, add \"quest_decision\": \"decline\".",
-            "If the player haggles and you agree to pay more, add \"reward_gold\": <new gold "
-            f"total, never more than {oq.get('base_gold', 40) * 2}>. Drive a fair bargain — "
-            "don't fold too easily.",
+            "The player may accept, refuse, or haggle. You may agree to raise the "
+            f"pay up to {oq.get('base_gold', 40) * 2} gold at most — drive a fair "
+            "bargain, don't fold too easily.",
         ]
 
     q = _active_quest_for(npc_id, world)
@@ -236,25 +258,63 @@ def _system_prompt(npc_id, world):
             f"The player may be here about it. Success means: {q['success_condition']}.",
             "React naturally and in character — you can resist, negotiate, or warm up "
             "depending on how the player treats you.",
-            "Your \"choices\" should suggest DIFFERENT ways the player could try to move "
-            "this errand forward (gentle, blunt, sly...), plus one to walk away for now.",
-            f"IF and only if the success condition is genuinely met during this reply, "
-            f"add \"complete_quest\": \"{q['flag']}\" to the @@STATE@@ JSON.",
         ]
-
-    parts += [
-        "",
-        "Every reply MUST end with exactly one machine-read line (the very last line, "
-        "never shown or mentioned to the player):",
-        '  @@STATE@@ {"choices": ["<option 1>", "<option 2>", ...]}',
-        "\"choices\" = 2-4 SHORT lines the player could plausibly say next, written in "
-        "the player's voice and fitting this exact moment (accepting, haggling, refusing, "
-        "different honest or sly ways to push the matter forward...). Always include one "
-        "option that walks away or drops the subject.",
-        "When something actually changed this turn, also add to that same JSON: "
-        "\"trust_delta\": <int -5..5> and/or \"advance\": \"<story flag>\".",
-    ]
     return "\n".join(parts)
+
+
+# --------------------------------------------------------------------------
+# Hidden director pass — reliable structured judgement of each turn
+# --------------------------------------------------------------------------
+def _director(client, npc_id, user_msg, npc_line, world):
+    """Second, low-temperature JSON-mode call: reads the exchange and rules on
+    mood, player choices, quest offer/decision/haggle/completion, trust."""
+    oq = _offered_quest_for(npc_id, world)
+    qa = _active_quest_for(npc_id, world)
+    ctx = {
+        "npc": NPCS[npc_id]["name"],
+        "npc_is_quest_giver": NPCS[npc_id]["is_quest_giver"],
+        "villagers": {k: f"{v['name']} ({v['role']})" for k, v in NPCS.items()},
+        "player_said": user_msg,
+        "npc_replied": npc_line,
+        "quest_offered_awaiting_decision": bool(oq),
+        "offered_reward_gold": oq["reward"].get("gold") if oq else None,
+        "offered_gold_cap": oq.get("base_gold", 40) * 2 if oq else None,
+        "active_quest_with_this_npc": bool(qa),
+        "active_success_condition": qa["success_condition"] if qa else None,
+    }
+    prompt = f"""You are the hidden game director of a cosy town game.
+Read ONE dialogue turn and output STRICT JSON only.
+
+Context: {json.dumps(ctx, ensure_ascii=False)}
+
+Output keys:
+- "mood": the NPC's feeling now, exactly one of: neutral, happy, sad, angry, shy, surprised
+- "choices": 2-4 SHORT lines the PLAYER could say next, in the player's voice, in the
+  SAME LANGUAGE the player speaks, fitting this exact moment (accept / haggle / refuse /
+  push the matter forward in different tones...). Exactly one must walk away or drop
+  the subject.
+- "trust_delta": int -5..5 — how this turn changed the NPC's opinion of the player
+  (0 if unchanged)
+- "offer_quest": true — ONLY if npc_is_quest_giver is true, no quest is awaiting a
+  decision, and the player asked for work / a job / an errand / a way to earn money
+- "quest_decision": "accept" or "decline" — ONLY if quest_offered_awaiting_decision is
+  true and the player clearly decided
+- "reward_gold": int — if npc_replied proposes, offers or agrees to a NEW gold amount
+  for the errand (haggling), set this to that amount (never above offered_gold_cap)
+- "complete_quest": true — ONLY if active_quest_with_this_npc is true and the success
+  condition was genuinely met in this exchange
+- "go_to": a villager id from the "villagers" keys — ONLY if the player says they are
+  now LEAVING to go find / visit / talk to that villager (e.g. "I'll go see Odell now",
+  "我这就去找奥德尔"). Match names in any language. Omit if the player merely mentions
+  someone without leaving.
+
+Omit keys that do not apply. Output JSON only."""
+    resp = client.chat.completions.create(
+        model=MODEL, temperature=0.2,
+        response_format={"type": "json_object"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return _extract_json(resp.choices[0].message.content)
 
 
 def npc_reply(npc_id, user_msg, world):
@@ -268,11 +328,52 @@ def npc_reply(npc_id, user_msg, world):
         model=MODEL, messages=messages, temperature=0.9,
     )
     raw = resp.choices[0].message.content
-    narrative, effects = _split_state(raw)
+    narrative, effects = _split_state(raw)   # strip any stray @@STATE@@/JSON
+
+    # hidden director pass rules on the turn (structured, reliable)
+    effects.update(_director(client, npc_id, user_msg, narrative, world))
+    if effects.get("complete_quest") is True:
+        qa = _active_quest_for(npc_id, world)
+        effects["complete_quest"] = qa["flag"] if qa else None
 
     _apply_effects(npc_id, effects, world)
 
+    # the director ruled the player asked for work -> generate a real quest
+    # (AI signals intent, deterministic code creates the offer)
+    if (effects.get("offer_quest") and NPCS[npc_id]["is_quest_giver"]
+            and not _offered_quest_for(npc_id, world)):
+        q = generate_quest(world, lang_sample=user_msg)
+        narrative = f"{narrative}\n\n({q['description']})"
+
     world["history"][npc_id].append({"role": "user", "content": user_msg})
+    world["history"][npc_id].append({"role": "assistant", "content": narrative})
+    return narrative, effects
+
+
+def npc_greet(npc_id, world, lang_sample=None):
+    """The player just arrived at this NPC's place — the NPC opens the
+    conversation, aware of the shared world state (quests, reputation)."""
+    client = get_client()
+    system = _system_prompt(npc_id, world)
+    note = ("[The player just walked in to see you. Open the conversation in "
+            "character — greet them, or react to why they might be here given "
+            "the world state. 1-3 short lines."
+            + (f' Reply in the same language as this player line: "{lang_sample}"]'
+               if lang_sample else "]"))
+    messages = [{"role": "system", "content": system}]
+    messages += world["history"][npc_id][-12:]
+    messages += [{"role": "user", "content": note}]
+    resp = client.chat.completions.create(
+        model=MODEL, messages=messages, temperature=0.9,
+    )
+    narrative, effects = _split_state(resp.choices[0].message.content)
+    effects.update(_director(client, npc_id, "(the player has just walked in)",
+                             narrative, world))
+    # a greeting only sets mood/choices — it can't rule on quests or movement
+    for k in ("offer_quest", "quest_decision", "complete_quest", "go_to",
+              "reward_gold", "trust_delta"):
+        effects.pop(k, None)
+    _apply_effects(npc_id, effects, world)
     world["history"][npc_id].append({"role": "assistant", "content": narrative})
     return narrative, effects
 
@@ -285,6 +386,10 @@ def _apply_effects(npc_id, effects, world):
     parsed = [str(c) for c in (effects or {}).get("choices", []) if str(c).strip()][:4]
     world["pending_choices"][npc_id] = parsed or [
         "Go on…", "Never mind — I'd best be off."]
+    world.setdefault("mood", {k: "neutral" for k in NPCS})
+    mood = str((effects or {}).get("mood", "")).lower().strip()
+    if mood in VALID_MOODS:
+        world["mood"][npc_id] = mood
     if not effects:
         return
     oq = _offered_quest_for(npc_id, world)
@@ -317,7 +422,7 @@ def _apply_effects(npc_id, effects, world):
                 f"reputation {'+' if d > 0 else ''}{d}")
     if effects.get("advance"):
         world["flags"][effects["advance"]] = True
-    if "complete_quest" in effects:
+    if effects.get("complete_quest"):
         _complete_quest(effects["complete_quest"], world)
 
 
@@ -347,6 +452,10 @@ def _split_state(text):
     if "@@STATE@@" in text:
         before, after = text.split("@@STATE@@", 1)
         return before.strip(), _extract_json(after)
+    # model sometimes drops the marker but still appends the bare JSON
+    m = re.search(r"\{[^{}]*\"(?:choices|mood)\"[\s\S]*\}\s*$", text)
+    if m:
+        return text[:m.start()].strip(), _extract_json(m.group(0))
     return text.strip(), {}
 
 
