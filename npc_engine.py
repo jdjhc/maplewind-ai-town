@@ -176,7 +176,7 @@ Return ONLY JSON with these keys:
 {{
   "title": "short evocative title",
   "target_npc": "marla|odell|wren  (must be one of the target ids above)",
-  "description": "1-2 sentences Marla would say when giving the quest",
+  "description": "1-2 sentences in Marla's own voice giving the quest — never quote or echo the player's words",
   "success_condition": "a clear, checkable social outcome, e.g. 'the player gets Odell to agree to pay his tab' (always in English)",
   "reward": {{"gold": 30-80, "item": "a small flavourful item", "reputation": 10-20}},
   "offer_choices": ["a short line accepting the errand", "a short line haggling over the pay", "a short line politely declining"]

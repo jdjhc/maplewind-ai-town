@@ -7,7 +7,10 @@
 
 **🎮 Play it now — no setup needed: [maplewind-hollow.streamlit.app](https://maplewind-hollow.streamlit.app)**
 
-![Three villagers in their visual-novel scenes: Marla beaming in her store, Odell blushing at the forge, Wren gaping on the hillside](docs/scenes.png)
+![Live gameplay: asking Marla for work, haggling the reward up via choice buttons, accepting, cutting to the forge where Odell greets you, and completing the quest — gold, item and reputation land in the sidebar](docs/demo.gif)
+
+*One real session: ask for work → haggle → accept → scene cut to the forge →
+a kind word completes the quest and the rewards land in the sidebar.*
 
 A visual-novel-style prototype where **every villager is an LLM agent**. Chat
 with them, take on quests, haggle over rewards, and watch the story — and
@@ -50,6 +53,8 @@ compliance, ≈3.4 s and **≈¥0.31 per 100 player turns** — see
 capability field notes.
 
 ## Visual-novel presentation
+
+![Three villagers in their visual-novel scenes: Marla beaming in her store, Odell blushing at the forge, Wren gaping on the hillside](docs/scenes.png)
 
 - Each villager has an **original portrait drawn entirely in code** (SVG —
   no external assets, no copyright concerns) with **six moods**: neutral,
