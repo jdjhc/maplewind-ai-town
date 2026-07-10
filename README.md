@@ -7,6 +7,8 @@
 
 **🎮 Play it now — no setup needed: [maplewind-hollow.streamlit.app](https://maplewind-hollow.streamlit.app)**
 
+![Three villagers in their visual-novel scenes: Marla beaming in her store, Odell blushing at the forge, Wren gaping on the hillside](docs/scenes.png)
+
 A visual-novel-style prototype where **every villager is an LLM agent**. Chat
 with them, take on quests, haggle over rewards, and watch the story — and
 their portraits — react to your choices. Built to explore how generative AI
@@ -45,6 +47,8 @@ the key to shipping LLM features in real games.
 - Each villager has an **original portrait drawn entirely in code** (SVG —
   no external assets, no copyright concerns) with **six moods**: neutral,
   happy, sad, angry, shy, surprised.
+
+  ![All three villagers across their six moods](docs/moods.png)
 - The director picks the mood each turn, and the sprite reacts: a happy
   bounce, an angry shake, a shy sway, a surprised pop.
 - Dialogue lands in a VN-style box with a name plate; the player answers by
