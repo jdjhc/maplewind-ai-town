@@ -42,6 +42,13 @@ Every turn runs a **two-pass loop**:
 open-ended feel of an LLM while making scoring, rewards and progress reliable —
 the key to shipping LLM features in real games.
 
+**Is it reliable? Measured, not assumed:** an 18-case bilingual eval set scores
+the director at **15/15** on strict judgements, **18/18** on protocol
+compliance, ≈3.4 s and **≈¥0.31 per 100 player turns** — see
+[docs/EVALUATION.md](docs/EVALUATION.md) for the gates and
+[PRODUCT_ONEPAGER.md](PRODUCT_ONEPAGER.md) for the product framing and model
+capability field notes.
+
 ## Visual-novel presentation
 
 - Each villager has an **original portrait drawn entirely in code** (SVG —

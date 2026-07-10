@@ -13,8 +13,9 @@ Demonstrates three pillars of AI in games:
 Design principle (the important bit for a games PM):
     The LLM handles the CREATIVE layer (dialogue, quest flavour, narration).
     Deterministic code handles the RULES layer (quest completion, rewards,
-    reputation). Each NPC reply may append a hidden @@STATE@@ JSON block that
-    the engine parses and applies — "AI proposes, code disposes."
+    reputation). Every turn runs two passes — an in-character ACTOR reply,
+    then a hidden JSON-mode DIRECTOR call that rules on mood, choices and
+    quest events; code applies the ruling — "AI proposes, code disposes."
 
 Characters are ORIGINAL, only *inspired by* the archetypes of a well-known
 farming game (renamed to avoid any IP issues).
@@ -24,10 +25,27 @@ import os
 import re
 import json
 import copy
+import time
 from openai import OpenAI
 
 MODEL = "deepseek-chat"
 BASE_URL = "https://api.deepseek.com"
+
+# per-API-call telemetry (site, latency, tokens) — used by eval/eval_director.py
+CALL_LOG = []
+
+
+def _chat(client, site, **kwargs):
+    t0 = time.time()
+    resp = client.chat.completions.create(**kwargs)
+    usage = getattr(resp, "usage", None)
+    CALL_LOG.append({
+        "site": site,
+        "seconds": round(time.time() - t0, 3),
+        "prompt_tokens": getattr(usage, "prompt_tokens", 0) or 0,
+        "completion_tokens": getattr(usage, "completion_tokens", 0) or 0,
+    })
+    return resp
 
 
 # --------------------------------------------------------------------------
@@ -165,11 +183,10 @@ Return ONLY JSON with these keys:
 }}
 Make it fit a warm, gentle village. No violence."""
 
-    resp = client.chat.completions.create(
-        model=MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.9,
-    )
+    resp = _chat(client, "quest_gen",
+                 model=MODEL,
+                 messages=[{"role": "user", "content": prompt}],
+                 temperature=0.9)
     raw = resp.choices[0].message.content
     data = _extract_json(raw)
     tid = data.get("target_npc", "odell")
@@ -298,7 +315,8 @@ Output keys:
 - "offer_quest": true — ONLY if npc_is_quest_giver is true, no quest is awaiting a
   decision, and the player asked for work / a job / an errand / a way to earn money
 - "quest_decision": "accept" or "decline" — ONLY if quest_offered_awaiting_decision is
-  true and the player clearly decided
+  true and the player clearly decided. Asking questions about the errand, haggling, or
+  hesitating is NOT a decision — omit the key then
 - "reward_gold": int — if npc_replied proposes, offers or agrees to a NEW gold amount
   for the errand (haggling), set this to that amount (never above offered_gold_cap)
 - "complete_quest": true — ONLY if active_quest_with_this_npc is true and the success
@@ -309,11 +327,10 @@ Output keys:
   someone without leaving.
 
 Omit keys that do not apply. Output JSON only."""
-    resp = client.chat.completions.create(
-        model=MODEL, temperature=0.2,
-        response_format={"type": "json_object"},
-        messages=[{"role": "user", "content": prompt}],
-    )
+    resp = _chat(client, "director",
+                 model=MODEL, temperature=0.2,
+                 response_format={"type": "json_object"},
+                 messages=[{"role": "user", "content": prompt}])
     return _extract_json(resp.choices[0].message.content)
 
 
@@ -324,9 +341,8 @@ def npc_reply(npc_id, user_msg, world):
     messages += world["history"][npc_id][-12:]        # recent memory
     messages += [{"role": "user", "content": user_msg}]
 
-    resp = client.chat.completions.create(
-        model=MODEL, messages=messages, temperature=0.9,
-    )
+    resp = _chat(client, "actor",
+                 model=MODEL, messages=messages, temperature=0.9)
     raw = resp.choices[0].message.content
     narrative, effects = _split_state(raw)   # strip any stray @@STATE@@/JSON
 
@@ -363,9 +379,8 @@ def npc_greet(npc_id, world, lang_sample=None):
     messages = [{"role": "system", "content": system}]
     messages += world["history"][npc_id][-12:]
     messages += [{"role": "user", "content": note}]
-    resp = client.chat.completions.create(
-        model=MODEL, messages=messages, temperature=0.9,
-    )
+    resp = _chat(client, "greet",
+                 model=MODEL, messages=messages, temperature=0.9)
     narrative, effects = _split_state(resp.choices[0].message.content)
     effects.update(_director(client, npc_id, "(the player has just walked in)",
                              narrative, world))
